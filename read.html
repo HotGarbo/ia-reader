@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+
+<head>
+  <title>IA Reader</title>
+  <meta charset="utf8">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width">
+  <meta name="description" content="A simple, old browser compatible, reader for Internet Archive books">
+  <meta name="color-scheme" content="light dark">
+  <style>
+    html {
+      width: 100%;
+      height: 100%;
+      overscroll-behavior: contain; /* Disable pull down to refresh */
+    }
+    body {
+      /* display: flex; */
+      margin: 0;
+      min-width: 100%;
+      min-height: 100%;
+      overscroll-behavior: contain;
+      background-color: Canvas; /* Fix background not using preferred color scheme in iOS 9 */
+      font-family: system-ui, -apple-system, sans-serif; /* "-apple-system" for iOS 9 */
+      -webkit-text-size-adjust: 100%; /* Stop zoom on rotation to landscape? */
+    }
+    footer {
+      position: fixed;
+      bottom: 0;
+      mix-blend-mode: difference;
+      padding: .25em;
+    }
+    footer a {
+      color: white;
+    }
+    img {
+      background-image: url(spinner.gif);
+      background-repeat: no-repeat;
+      background-position: 50%;
+      flex-shrink: 0; /* Default in iOS 9 is 1?? */
+    }
+    @media (orientation: portrait) {
+      img {
+        width: 100%;
+        height: auto;
+        display: block; /* Up/down image flow (default inline-block is left/right) */
+      }
+      body {
+        width: 100%;
+        flex-direction: column;
+      }
+    }
+    @media (orientation: landscape) {
+      img {
+        width: auto;
+        height: 100%;
+      }
+      body {
+        height: 100%;
+        white-space: nowrap; /* Force inline-block images to flow left/right */
+      }
+    }
+    select {
+      margin: 1em;
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    var supportsLazyLoad = ('loading' in document.createElement('img'));
+
+    function metaCb(metadata) {
+      // Build manifest URL and get via JSONP
+      console.debug(metadata);
+      if (!metadata.server) {
+        alert("Book not found");
+        return;
+      }
+      if (metadata.is_dark) {
+        alert("Book removed");
+        return;
+      }
+      if (metadata.metadata["access-restricted-item"]) {
+        alert("Access restricted");
+        return;
+      }
+      document.title += " | " + metadata.metadata.title;
+      var manifestUrl = "https://" + metadata.server + "/BookReader/BookReaderJSIA.php?"
+        + "id=" + metadata.metadata.identifier + "&"
+        + "itemPath=" + metadata.dir + "&"
+        + "server=" + metadata.server + "&"
+        + "format=jsonp&callback=manifestCb"
+      ;
+      var subPrefixes = [];
+      for (var i = 0; i < metadata.files.length; i++) {
+        var file = metadata.files[i];
+        if (file.name.endsWith("_jp2.zip")) {
+          subPrefixes.push(file.name.substr(0, file.name.length-8));
+        }
+      }
+      if (subPrefixes.length == 1) {
+        manifestUrl += "&subPrefix=" + encodeURIComponent(subPrefixes[0]);
+        var jsonpScript = document.createElement("script");
+        jsonpScript.src = manifestUrl;
+        jsonpScript.onerror = function() { alert("Unable to load book manifest") }
+        document.body.appendChild(jsonpScript);
+      } else if (subPrefixes.length > 1) {
+        // Bad hack to handle selecting from multi-file items
+        var select = document.createElement("select");
+        select.onchange = function(evt) {
+          if (evt.target.value) {
+            evt.target.remove();
+            var jsonpScript = document.createElement("script");
+            jsonpScript.src = evt.target.value;
+            jsonpScript.onerror = function() { alert("Unable to load book manifest") }
+            document.body.appendChild(jsonpScript);
+          }
+        }
+        var option = document.createElement("option");
+        option.innerText = "Select file from \"" + metadata.metadata.title + "\"";
+        select.appendChild(option);
+        for (var i = 0; i < subPrefixes.length; i++) {
+          var option = document.createElement("option");
+          option.innerText = subPrefixes[i];
+          option.value = manifestUrl + "&subPrefix=" + encodeURIComponent(subPrefixes[i]);
+          select.appendChild(option);
+        }
+        document.body.appendChild(select);
+      } else {
+        alert("No jp2.zip files found");
+      }
+    }
+
+    function manifestCb(manifest) {
+      // Load leaf images from manifest
+      console.debug(manifest);
+      if (manifest.error) {
+        alert(mainifest.error.string);
+        return;
+      }
+      var pages = manifest.data.brOptions.data;
+      for (var i = 0; i < pages.length; i++) {
+        var page = pages[i];
+        for (var j = 0; j < page.length; j++ ) {
+          var leaf = page[j];
+          var img = document.createElement("img");
+          var widthScale = leaf.width / window.innerWidth;
+          var heightScale = leaf.height / window.innerHeight;
+          // More pixels are better than too few
+          var scale = Math.max(1, Math.floor(Math.min(widthScale, heightScale)));
+          img.width = leaf.width / scale;
+          img.height = leaf.height / scale;
+          if (supportsLazyLoad) {
+            img.loading = "lazy";
+            img.src = leaf.uri + "&scale=" + scale;
+          } else {
+            // Manually lazy-load later
+            img.dataset.src = leaf.uri + "&scale=" + scale;
+            //img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="; // iOS 9 renders <img> with no src at 0 height
+          }
+          document.body.appendChild(img);
+        }
+      }
+    }
+
+    function loadFromHash() {
+      // Get entity ID from hash
+      var id = window.location.hash.replace("#", "");
+      if (!id) id = "beavis-butthead-16-1995"; //"mad-magazine-random-uk-issues";
+      document.body.innerHTML = "<footer><a href='https://archive.org/details/" + id + "' target='_blank'>View at Internet Archive</a></footer>";
+      // Get metadata via JSONP
+      var metadataUrl = "https://archive.org/metadata/" + id + "?callback=metaCb";
+      var jsonpScript = document.createElement("script");
+      jsonpScript.src = metadataUrl;
+      document.body.appendChild(jsonpScript);
+    }
+
+    window.onhashchange = function() {
+      //
+      // loadFromHash()
+    }
+    //if (window.location.hash)
+    loadFromHash()
+
+    // Lazy-load polyfill
+    var frame = 0;
+    function rafStep(ts) {
+      frame++;
+      if (frame == 20) {
+        frame = 0;
+        var imgs = document.querySelectorAll("img");
+        for (var i = 0; i < imgs.length; i++) {
+          var img = imgs[i];
+          var bounds = img.getBoundingClientRect();
+          if (window.innerHeight > window.innerWidth) {
+            // Portrait
+            if ((bounds.top >= 0 && bounds.top <= window.innerHeight)
+            || (bounds.bottom > 0 && bounds.bottom <= window.innerHeight)) {
+              if (img.src != img.dataset.src) {
+                img.src = img.dataset.src;
+              }
+            }
+          } else {
+            // Landscape
+            if ((bounds.left >= 0 && bounds.left <= window.innerWidth)
+            || (bounds.right > 0 && bounds.right <= window.innerWidth)) {
+              if (img.src != img.dataset.src) {
+                img.src = img.dataset.src;
+              }
+            }
+          }
+        }
+      }
+      window.requestAnimationFrame(rafStep);
+    }
+    if (!supportsLazyLoad) window.requestAnimationFrame(rafStep);
+  </script>
+</body>
