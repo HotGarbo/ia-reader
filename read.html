@@ -8,70 +8,136 @@
   <meta name="description" content="A simple, old browser compatible, reader for Internet Archive books">
   <meta name="color-scheme" content="light dark">
   <style>
+    * {
+      /* "-apple-system" for iOS 9 */
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
     html {
-      width: 100%;
-      height: 100%;
-      overscroll-behavior: contain; /* Disable pull down to refresh */
-    }
-    body {
-      /* display: flex; */
-      margin: 0;
-      min-width: 100%;
-      min-height: 100%;
+      /* Disable pull down to refresh? */
       overscroll-behavior: contain;
-      background-color: Canvas; /* Fix background not using preferred color scheme in iOS 9 */
-      font-family: system-ui, -apple-system, sans-serif; /* "-apple-system" for iOS 9 */
-      -webkit-text-size-adjust: 100%; /* Stop zoom on rotation to landscape? */
+      /* Stop zoom on rotation to landscape? */
+      -webkit-text-size-adjust: 100%;
+      height: 100%;
     }
+
+    body {
+      margin: 0;
+      height: 100%;
+      /* Canvas for modern browsers with dark mode */
+      background-color: Canvas;
+      color: CanvasText;
+      /* Non-Canvas shadow for iOS 9 */
+      text-shadow: 0px 0px 5px white,
+        1px 1px 3px white,
+        -1px -1px 3px white,
+        -1px 1px 3px white,
+        1px -1px 3px white;
+      text-shadow: 0px 0px 5px Canvas,
+        1px 1px 3px Canvas,
+        -1px -1px 3px Canvas,
+        -1px 1px 3px Canvas,
+        1px -1px 3px Canvas;
+    }
+
+    main {
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      overflow: scroll;
+      /* Fix for poor scrolling performance in iOS 9 */
+      -webkit-overflow-scrolling: touch;
+    }
+
+    header,
     footer {
-      position: fixed;
-      bottom: 0;
-      mix-blend-mode: difference;
-      padding: .25em;
+      /* z-index to fix inability to tap selects in iOS 9 */
+      z-index: 1;
+      /* position: fixed would really be better, as I wouldn't have to make `main`
+         scrollable, but iOS 9 does some weird stuff when one taps selects in fixed blocks.
+      */
+      position: absolute;
+      left: 0;
+      right: 0;
+      margin: .5em;
     }
+
+    header a,
     footer a {
-      color: white;
+      color: black;
+      color: CanvasText;
     }
+
+    header select,
+    footer select {
+      font-size: 14px;
+    }
+
+    header {
+      top: 0;
+    }
+
+    footer {
+      bottom: 0;
+    }
+
     img {
       background-image: url(spinner.gif);
       background-repeat: no-repeat;
       background-position: 50%;
-      flex-shrink: 0; /* Default in iOS 9 is 1?? */
+      vertical-align: top;
+      object-fit: fill;
     }
+
     @media (orientation: portrait) {
       img {
         width: 100%;
         height: auto;
-        display: block; /* Up/down image flow (default inline-block is left/right) */
+        /* Up/down image flow (default inline-block is left/right) */
+        display: block;
       }
+
       body {
         width: 100%;
         flex-direction: column;
       }
     }
+
     @media (orientation: landscape) {
       img {
         width: auto;
         height: 100%;
       }
+
       body {
         height: 100%;
-        white-space: nowrap; /* Force inline-block images to flow left/right */
+        /* Force inline-block images to flow left/right */
+        white-space: nowrap;
       }
-    }
-    select {
-      margin: 1em;
     }
   </style>
 </head>
 
 <body>
+  <header></header>
+  <main></main>
+  <footer>
+    <select id="pageno" onchange="jumpToPage(event)" autocomplete="off"></select>/<span id="pagecount"></span>
+    <a style="float: right" href="https://github.com/hotgarbo/ia" target="_blank">GitHub</a>
+  </footer>
   <script>
     var supportsLazyLoad = ('loading' in document.createElement('img'));
+    var accessRestricted = false;
+
+    function jumpToPage(event) {
+      console.debug(event);
+      document.querySelectorAll("img")[event.target.selectedIndex].scrollIntoView({ "block": "start", "inline": "start" });
+      event.target.blur();
+    }
 
     function metaCb(metadata) {
       // Build manifest URL and get via JSONP
-      console.debug(metadata);
+      console.debug("metadata", metadata);
       if (!metadata.server) {
         alert("Book not found");
         return;
@@ -81,8 +147,8 @@
         return;
       }
       if (metadata.metadata["access-restricted-item"]) {
-        alert("Access restricted");
-        return;
+        alert("Access restricted. Open in Internet Archive for details");
+        accessRestricted = true;
       }
       document.title += " | " + metadata.metadata.title;
       var manifestUrl = "https://" + metadata.server + "/BookReader/BookReaderJSIA.php?"
@@ -90,64 +156,150 @@
         + "itemPath=" + metadata.dir + "&"
         + "server=" + metadata.server + "&"
         + "format=jsonp&callback=manifestCb"
-      ;
+        ;
       var subPrefixes = [];
       for (var i = 0; i < metadata.files.length; i++) {
         var file = metadata.files[i];
         if (file.name.endsWith("_jp2.zip")) {
-          subPrefixes.push(file.name.substr(0, file.name.length-8));
+          subPrefixes.push(file.name.substr(0, file.name.length - 8));
         }
       }
+      var titleSpan = document.createElement("strong");
+      titleSpan.innerText = metadata.metadata.title;
+      var header = document.querySelector("header");
+      header.innerHTML = "";
       if (subPrefixes.length == 1) {
         manifestUrl += "&subPrefix=" + encodeURIComponent(subPrefixes[0]);
         var jsonpScript = document.createElement("script");
         jsonpScript.src = manifestUrl;
-        jsonpScript.onerror = function() { alert("Unable to load book manifest") }
+        jsonpScript.onerror = function () { alert("Unable to load book manifest") }
         document.body.appendChild(jsonpScript);
+        header.appendChild(titleSpan);
       } else if (subPrefixes.length > 1) {
         // Bad hack to handle selecting from multi-file items
         var select = document.createElement("select");
-        select.onchange = function(evt) {
+        select.autocomplete = "off";
+        select.onchange = function (evt) {
+          document.querySelector("main").innerHTML = "";
+          document.querySelector("#pageno").innerHTML = "";
+          document.querySelector("#pagecount").innerHTML = "";
           if (evt.target.value) {
+            /*
+            titleSpan.innerText = evt.target[evt.target.selectedIndex].innerText;
+            evt.target.parentNode.insertBefore(titleSpan, evt.target);
             evt.target.remove();
+            */
             var jsonpScript = document.createElement("script");
             jsonpScript.src = evt.target.value;
-            jsonpScript.onerror = function() { alert("Unable to load book manifest") }
+            jsonpScript.onerror = function () { alert("Unable to load book manifest") }
             document.body.appendChild(jsonpScript);
           }
         }
         var option = document.createElement("option");
         option.innerText = "Select file from \"" + metadata.metadata.title + "\"";
+        option.value = "";
         select.appendChild(option);
+        select.appendChild(document.createElement("hr"));
         for (var i = 0; i < subPrefixes.length; i++) {
           var option = document.createElement("option");
           option.innerText = subPrefixes[i];
           option.value = manifestUrl + "&subPrefix=" + encodeURIComponent(subPrefixes[i]);
           select.appendChild(option);
         }
-        document.body.appendChild(select);
+        header.appendChild(select);
       } else {
+        header.appendChild(titleSpan);
         alert("No jp2.zip files found");
       }
+      var a = document.createElement("a");
+      a.href = "https://archive.org/details/" + metadata.metadata.identifier;
+      a.target = "_blank";
+      a.innerText = "View at Internet Archive";
+      a.style.float = "right";
+      header.appendChild(a);
+    }
+
+    // Failed attempt at trying to borrow books
+    function createToken(identifier) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", "https://archive.org/services/loans/loan", false);
+      xhr.setRequestHeader("Content-Type", "multipart/form-data");
+      xhr.withCredentials = true;
+      /*
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+          setInterval(createToken, 1000 * 60 * 2, identifier);
+        }
+      }
+      */
+      var data = new FormData();
+      data.append("action", "create_token");
+      data.append("identifier", identifier);
+      xhr.send(data);
     }
 
     function manifestCb(manifest) {
       // Load leaf images from manifest
-      console.debug(manifest);
+      console.debug("manifest", manifest);
       if (manifest.error) {
         alert(mainifest.error.string);
         return;
       }
+      // Failed attempt to enable borrowing
+      /*
+      if (accessRestricted) {
+        var identifier = manifest.data.metadata.identifier;
+        var url = "https://archive.org/services/loans/loan";
+        var forms = `
+          <form action="${url}" method="post" enctype="multipart/form-data" target="dummy">
+            <iframe name="dummy"></iframe>
+            <input type="hidden" name="action" value="browse_book">
+            <input type="hidden" name="identifier" value="${identifier}">
+            <input type="submit" value="Browse">
+          </form>
+          <form action="${url}" method="post" enctype="multipart/form-data" target="dummy2">
+            <iframe name="dummy2"></iframe>
+            <input type="hidden" name="action" value="create_token">
+            <input type="hidden" name="identifier" value="${identifier}">
+            <input type="submit" value="Create Token">
+          </form>
+        `;
+        document.body.innerHTML += forms;
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", url, false); // Sync so you gotta wait
+        xhr.withCredentials = true;
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+            createToken(identifier)
+          }
+        }
+        var data = new FormData();
+        data.append("action", "browse_book");
+        data.append("identifier", identifier);
+        xhr.send(data);
+        createToken(identifier);
+        loadFromHash();
+      }
+      */
+      var main = document.querySelector("main");
+      // Force reset scroll for reloaded pages
+      main.scrollTop = 0;
+      var pageno = document.querySelector("#pageno")
       var pages = manifest.data.brOptions.data;
+      var n = 0;
       for (var i = 0; i < pages.length; i++) {
         var page = pages[i];
-        for (var j = 0; j < page.length; j++ ) {
+        for (var j = 0; j < page.length; j++) {
+          n++;
           var leaf = page[j];
           var img = document.createElement("img");
+          /*
           var widthScale = leaf.width / window.innerWidth;
           var heightScale = leaf.height / window.innerHeight;
-          // More pixels are better than too few
           var scale = Math.max(1, Math.floor(Math.min(widthScale, heightScale)));
+          */
+          // Load *all* the pixels
+          var scale = 1;
           img.width = leaf.width / scale;
           img.height = leaf.height / scale;
           if (supportsLazyLoad) {
@@ -156,18 +308,27 @@
           } else {
             // Manually lazy-load later
             img.dataset.src = leaf.uri + "&scale=" + scale;
-            //img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="; // iOS 9 renders <img> with no src at 0 height
+            // Hack for iOS 9 not rendering images with height/width set to auto
+            // Thanks to https://stackoverflow.com/a/55867053
+            var svgHack = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='${img.width}px' height='${img.height}px'/>`;
+            img.src = svgHack;
           }
-          document.body.appendChild(img);
+          main.appendChild(img);
+          var pageOpt = document.createElement("option");
+          pageOpt.innerText = n;
+          pageno.appendChild(pageOpt);
         }
       }
+      document.querySelector("#pagecount").innerText = n;
     }
 
     function loadFromHash() {
       // Get entity ID from hash
-      var id = window.location.hash.replace("#", "");
-      if (!id) id = "beavis-butthead-16-1995"; //"mad-magazine-random-uk-issues";
-      document.body.innerHTML = "<footer><a href='https://archive.org/details/" + id + "' target='_blank'>View at Internet Archive</a></footer>";
+      var id = window.location.hash.substring(1);
+      if (!id) {
+        id = "bartkira";
+        window.location.hash = id;
+      }
       // Get metadata via JSONP
       var metadataUrl = "https://archive.org/metadata/" + id + "?callback=metaCb";
       var jsonpScript = document.createElement("script");
@@ -175,44 +336,93 @@
       document.body.appendChild(jsonpScript);
     }
 
-    window.onhashchange = function() {
+    window.onhashchange = function () {
       //
       // loadFromHash()
     }
     //if (window.location.hash)
     loadFromHash()
 
-    // Lazy-load polyfill
-    var frame = 0;
-    function rafStep(ts) {
-      frame++;
-      if (frame == 20) {
-        frame = 0;
+    // Page counter w/ lazy-load polyfill
+    /*
+    var scrollTimer;
+    document.querySelector("main").onscroll = function(event) {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function() {
+        var pageno = document.querySelector("#pageno");
         var imgs = document.querySelectorAll("img");
+        var updatedPageNo = false;
         for (var i = 0; i < imgs.length; i++) {
           var img = imgs[i];
           var bounds = img.getBoundingClientRect();
           if (window.innerHeight > window.innerWidth) {
             // Portrait
-            if ((bounds.top >= 0 && bounds.top <= window.innerHeight)
-            || (bounds.bottom > 0 && bounds.bottom <= window.innerHeight)) {
-              if (img.src != img.dataset.src) {
+            if ((bounds.top >= 0 && bounds.top <= window.innerHeight) || (bounds.bottom > 0 && bounds.bottom <= window.innerHeight)) {
+              if (!updatedPageNo) {
+                pageno.selectedIndex = i;
+                updatedPageNo = true;
+              }
+              if (!supportsLazyLoad && img.src != img.dataset.src) {
                 img.src = img.dataset.src;
               }
             }
           } else {
             // Landscape
-            if ((bounds.left >= 0 && bounds.left <= window.innerWidth)
-            || (bounds.right > 0 && bounds.right <= window.innerWidth)) {
-              if (img.src != img.dataset.src) {
+            if ((bounds.left >= 0 && bounds.left <= window.innerWidth) || (bounds.right > 0 && bounds.right <= window.innerWidth)) {
+              if (!updatedPageNo) {
+                pageno.selectedIndex = i;
+                updatedPageNo = true;
+              }
+              if (!supportsLazyLoad && img.src != img.dataset.src) {
                 img.src = img.dataset.src;
               }
             }
           }
         }
+      }, 150)
+    }
+    */
+    var frame = 0;
+    function rafStep(ts) {
+      frame++;
+      if (frame == 10) {
+        frame = 0;
+        var pageno = document.querySelector("#pageno");
+        var imgs = document.querySelectorAll("img");
+        var updatedPageNo = false;
+        for (var i = 0; i < imgs.length; i++) {
+          var img = imgs[i];
+          var bounds = img.getBoundingClientRect();
+          // Portrait image edges
+          var boundsMin = bounds.top;
+          var boundsMax = bounds.bottom;
+          var windowSize = window.innerHeight;
+          if (window.innerWidth > window.innerHeight) {
+            // Landscape edges
+            boundsMin = bounds.left;
+            boundsMax = bounds.right;
+            windowSize = window.innerWidth;
+          }
+          var load = false;
+          if (boundsMin >= 0 && boundsMin <= windowSize) {
+            // Limit page number update to first page found in the viewport
+            if (!updatedPageNo) {
+              pageno.selectedIndex = i;
+              updatedPageNo = true;
+            }
+            load = true;
+          }
+          if (boundsMax > 0 && boundsMax <= windowSize) {
+            load = true;
+          }
+          if (!supportsLazyLoad && load && img.src != img.dataset.src) {
+            img.src = img.dataset.src;
+          }
+        }
       }
       window.requestAnimationFrame(rafStep);
     }
-    if (!supportsLazyLoad) window.requestAnimationFrame(rafStep);
+    window.requestAnimationFrame(rafStep);
+
   </script>
 </body>
