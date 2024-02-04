@@ -2,155 +2,162 @@
 <html lang="en">
 
 <head>
-    <title>IA Search</title>
-    <meta charset="utf8">
-    <meta name="referrer" content="no-referrer">
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="A simple, old browser compatible, search interface for Internet Archive books">
-    <meta name="color-scheme" content="light dark">
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="/apple-touch-icon.png">
-    <meta property="og:url" content="https://ia.hotgarba.ge">
-    <meta name="twitter:card" content="summary_large_image">
-    <link rel="icon" href="/apple-touch-icon.png">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-    <style>
-        * {
-            font-family: system-ui, -apple-system, sans-serif;
-        }
+  <title>IA Search</title>
+  <meta charset="utf8">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A simple, old browser compatible, search interface for Internet Archive books">
+  <meta name="color-scheme" content="light dark">
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/apple-touch-icon.png">
+  <meta property="og:url" content="https://ia.hotgarba.ge">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    * {
+      font-family: system-ui, -apple-system, sans-serif;
+    }
 
-        form {
-            margin-bottom: 1em;
-        }
+    a {
+      color: black;
+      color: CanvasText;
+    }
 
-        input {
-            font-size: 16px;
-        }
+    form {
+      margin-bottom: 1em;
+    }
 
-        table {
-            width: 100%;
-            table-layout: fixed;
-        }
+    input {
+      font-size: 16px;
+    }
 
-        img {
-            width: 100px;
-            height: 100px;
-            object-fit: contain;
-            object-position: center center;
-        }
+    table {
+      width: 100%;
+      table-layout: fixed;
+    }
 
-        td:nth-child(1) {
-            width: 100px;
-        }
+    img {
+      width: 100px;
+      height: 100px;
+      object-fit: contain;
+      object-position: center center;
+    }
 
-        td:nth-child(2) {
-            vertical-align: top;
-            overflow-wrap: break-word;
-            padding-left: .5em;
-        }
+    td:nth-child(1) {
+      width: 100px;
+    }
 
-        td p {
-            display: -webkit-box;
-            -webkit-line-clamp: 5;
-            -webkit-box-orient: vertical;
-            text-overflow: ellipsis;
-            overflow: hidden;
-        }
-    </style>
+    td:nth-child(2) {
+      vertical-align: top;
+      overflow-wrap: break-word;
+      padding-left: .5em;
+    }
+
+    td p {
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+  </style>
 </head>
 
 <body>
-    <form onsubmit="search(event)">
-        <input type="search" placeholder="Search">
-        <label>Free-to-read only <input type="checkbox" name="free" checked onchange="search(event)"></label>
-    </form>
-    <main></main>
+  <form onsubmit="search(event)">
+    <input type="search" placeholder="Search">
+    <label>Free-to-read only <input type="checkbox" name="free" checked onchange="search(event)"></label>
+  </form>
+  <main></main>
+  <footer>
+    <a style="position: fixed; bottom: 0; right: 0; margin: .5em" href="https://github.com/hotgarbo/ia" target="_blank">GitHub</a>
+  </footer>
+  <script>
+    var fields = [];
+    function fieldsCb(results) {
+      for (var key in results.fields) {
+        fields.push(results.fields[key]);
+      }
+    }
 
-    <script>
-        var fields = [];
-        function fieldsCb(results) {
-            for (var key in results.fields) {
-                fields.push(results.fields[key]);
-            }
+    function parseHash() {
+      var hash = window.location.hash.substring(1);
+      hashKVs = hash.split("&");
+      var out = {};
+      for (var i in hashKVs) {
+        var kv = hashKVs[i].split("=");
+        var key = decodeURIComponent(kv[0]);
+        if (!key) continue;
+        out[key] = null;
+        if (kv.length > 1) {
+          out[key] = decodeURIComponent(kv[1]);
         }
-
-        function parseHash() {
-            var hash = window.location.hash.substring(1);
-            hashKVs = hash.split("&");
-            var out = {};
-            for (var i in hashKVs) {
-                var kv = hashKVs[i].split("=");
-                var key = decodeURIComponent(kv[0]);
-                if (!key) continue;
-                out[key] = null;
-                if (kv.length > 1) {
-                    out[key] = decodeURIComponent(kv[1]);
-                }
-            }
-            return out;
+      }
+      return out;
+    }
+    var searchUrl = "";
+    window.onhashchange = function (event) {
+      var query = parseHash();
+      console.log(query);
+      document.title = "IA Search | " + query.q;
+      document.querySelector("form")[0].value = query.q;
+      if ("free" in query) {
+        document.querySelector("form")[1].checked = true;
+      }
+      document.querySelector("main").innerHTML = "";
+      /*
+      searchUrl = "https://archive.org/services/search/v1/scrape?" +
+          `q=mediatype:texts ${encodeURIComponent(query)}&`
+          + "fields=title,lending___is_readable,description&"
+          //+ "sorts=__sort&"
+          + "count=100&"
+          + "callback=searchCb&";
+      //+ "fields=" + fields.join(",");
+      */
+      searchUrl = `https://archive.org/advancedsearch.php?q=mediatype:texts ${encodeURIComponent(query.q)}`
+        + `${("free" in query) ? " -access-restricted-item:(true)" : ""}`
+        + `&fl=identifier,title,description,access-restricted-item,lending___is_lendable`
+        + `&rows=50&output=json&callback=searchCb`;
+      searchJsonp(0);
+    }
+    function search(event) {
+      event.preventDefault();
+      var form = document.querySelector("form");
+      window.location.hash = `q=${form[0].value}&${form[1].checked ? "free" : ""}`;
+    }
+    function searchNext(event, page) {
+      event.target.remove();
+      searchJsonp(page);
+    }
+    function searchJsonp(page) {
+      var main = document.querySelector("main");
+      main.innerHTML += "<img class='spinner' src='spinner.gif'>";
+      var jsonpScript = document.createElement("script");
+      jsonpScript.src = searchUrl + "&page=" + (page + 1); // 1-based index because of course it is
+      document.body.appendChild(jsonpScript);
+    }
+    function searchCb(results) {
+      console.debug(results);
+      var main = document.querySelector("main");
+      if (results.response.docs.length == 0) {
+        main.innerHTML = "No results found";
+        return;
+      }
+      document.querySelector(".spinner").remove();
+      var html = "<table>";
+      for (var i in results.response.docs) {
+        var item = results.response.docs[i];
+        var restricted = "";
+        if (item["access-restricted-item"]) {
+          var action = "View";
+          if (item["lending___is_lendable"]) {
+            action = "Borrow";
+          }
+          restricted = `🔒 (<a target="_blank" href="https://archive.org/details/${item.identifier}">${action} at Internet Archive</a>)`;
         }
-        var searchUrl = "";
-        window.onhashchange = function (event) {
-            var query = parseHash();
-            console.log(query);
-            document.title = "IA Search | " + query.q;
-            document.querySelector("form")[0].value = query.q;
-            if ("free" in query) {
-                document.querySelector("form")[1].checked = true;
-            }
-            document.querySelector("main").innerHTML = "";
-            /*
-            searchUrl = "https://archive.org/services/search/v1/scrape?" +
-                `q=mediatype:texts ${encodeURIComponent(query)}&`
-                + "fields=title,lending___is_readable,description&"
-                //+ "sorts=__sort&"
-                + "count=100&"
-                + "callback=searchCb&";
-            //+ "fields=" + fields.join(",");
-            */
-            searchUrl = `https://archive.org/advancedsearch.php?q=mediatype:texts ${encodeURIComponent(query.q)}`
-                + `${("free" in query) ? " -access-restricted-item:(true)" : ""}`
-                + `&fl=identifier,title,description,access-restricted-item,lending___is_lendable`
-                + `&rows=50&output=json&callback=searchCb`;
-            searchJsonp(0);
-        }
-        function search(event) {
-            event.preventDefault();
-            var form = document.querySelector("form");
-            window.location.hash = `q=${form[0].value}&${form[1].checked ? "free" : ""}`;
-        }
-        function searchNext(event, page) {
-            event.target.remove();
-            searchJsonp(page);
-        }
-        function searchJsonp(page) {
-            var main = document.querySelector("main");
-            main.innerHTML += "<img class='spinner' src='spinner.gif'>";
-            var jsonpScript = document.createElement("script");
-            jsonpScript.src = searchUrl + "&page=" + (page + 1); // 1-based index because of course it is
-            document.body.appendChild(jsonpScript);
-        }
-        function searchCb(results) {
-            console.debug(results);
-            var main = document.querySelector("main");
-            if (results.response.docs.length == 0) {
-                main.innerHTML = "No results found";
-                return;
-            }
-            document.querySelector(".spinner").remove();
-            var html = "<table>";
-            for (var i in results.response.docs) {
-                var item = results.response.docs[i];
-                var restricted = "";
-                if (item["access-restricted-item"]) {
-                    var action = "View";
-                    if (item["lending___is_lendable"]) {
-                        action = "Borrow";
-                    }
-                    restricted = `🔒 (<a target="_blank" href="https://archive.org/details/${item.identifier}">${action} at Internet Archive</a>)`;
-                }
-                var desc = Array.isArray(item.description) ? item.description.join("<br>") : item.description ? item.description : "";
-                html += `
+        var desc = Array.isArray(item.description) ? item.description.join("<br>") : item.description ? item.description : "";
+        html += `
                     <tr>
                         <td><img loading="lazy" src="https://archive.org/services/img/${item.identifier}"></td>
                         <td>
@@ -159,20 +166,20 @@
                         </td>
                     </tr>
                 `;
-            }
-            html += "</table>";
-            var start = results.response.start;
-            var count = results.response.docs.length;
-            var max = results.response.numFound;
-            if (start + count < max) {
-                html += `<button onclick='searchNext(event, ${(start + count) / 50})'>Next</button>`
-            }
-            main.innerHTML += html;
-        }
+      }
+      html += "</table>";
+      var start = results.response.start;
+      var count = results.response.docs.length;
+      var max = results.response.numFound;
+      if (start + count < max) {
+        html += `<button onclick='searchNext(event, ${(start + count) / 50})'>Next</button>`
+      }
+      main.innerHTML += html;
+    }
 
-        if (window.location.hash) window.onhashchange();
-    </script>
-    <script _src="https://archive.org/services/search/v1/fields?callback=fieldsCb"></script>
+    if (window.location.hash) window.onhashchange();
+  </script>
+  <script _src="https://archive.org/services/search/v1/fields?callback=fieldsCb"></script>
 </body>
 
 </html>
